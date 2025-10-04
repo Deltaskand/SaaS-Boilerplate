@@ -71,7 +71,9 @@ async function bootstrap() {
       },
     });
 
-    logger.info(`Swagger documentation available at http://localhost:${configService.port}/api/docs`);
+    logger.info(
+      `Swagger documentation available at http://localhost:${configService.port}/api/docs`,
+    );
   }
 
   const port = configService.port;
@@ -84,6 +86,7 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
+  // eslint-disable-next-line no-console
   console.error('❌ Application failed to start:', error);
   process.exit(1);
 });

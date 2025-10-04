@@ -38,7 +38,7 @@ export class HealthController {
     status: 503,
     description: 'Application is unhealthy',
   })
-  check() {
+  check(): Promise<any> {
     return this.health.check([
       // Vérifier la connexion à la base de données
       () => this.db.pingCheck('database'),

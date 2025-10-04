@@ -17,9 +17,7 @@ export const envValidationSchema = Joi.object({
   MONGODB_URI: Joi.string().required(),
 
   // Logging
-  LOG_LEVEL: Joi.string()
-    .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace')
-    .default('info'),
+  LOG_LEVEL: Joi.string().valid('fatal', 'error', 'warn', 'info', 'debug', 'trace').default('info'),
 
   // CORS
   CORS_ORIGIN: Joi.string().required(),
