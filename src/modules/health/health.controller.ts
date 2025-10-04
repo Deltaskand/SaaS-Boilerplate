@@ -3,80 +3,75 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   HealthCheckService,
   HealthCheck,
-  TypeOrmHealthIndicator,
-  MemoryHealthIndicator,
-  DiskHealthIndicator,
+  MongooseHealthIndicator,
+  HealthCheckResult,
 } from '@nestjs/terminus';
-import { Public } from '@/common/decorators';
 
 /**
- * Controller de health check
- * Vérifie l'état de santé de l'application et de ses dépendances
+ * Health Controller
+ * Provides health check endpoints for monitoring
  */
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
   constructor(
     private health: HealthCheckService,
-    private db: TypeOrmHealthIndicator,
-    private memory: MemoryHealthIndicator,
-    private disk: DiskHealthIndicator,
+    private db: MongooseHealthIndicator,
   ) {}
 
   /**
-   * Health check global
+   * Main health check endpoint
+   * @returns Health status of all services
    */
   @Get()
-  @Public()
   @HealthCheck()
-  @ApiOperation({ summary: 'Check application health' })
+  @ApiOperation({ summary: 'Health check endpoint' })
   @ApiResponse({
     status: 200,
-    description: 'Application is healthy',
+    description: 'The Health Check is successful',
   })
   @ApiResponse({
     status: 503,
-    description: 'Application is unhealthy',
+    description: 'The Health Check is not successful',
   })
-  check(): Promise<any> {
+  check(): Promise<HealthCheckResult> {
     return this.health.check([
-      // Vérifier la connexion à la base de données
-      () => this.db.pingCheck('database'),
-
-      // Vérifier l'utilisation de la mémoire heap (< 150MB)
-      () => this.memory.checkHeap('memory_heap', 150 * 1024 * 1024),
-
-      // Vérifier l'utilisation de la mémoire RSS (< 300MB)
-      () => this.memory.checkRSS('memory_rss', 300 * 1024 * 1024),
-
-      // Vérifier l'espace disque (> 50%)
-      () =>
-        this.disk.checkStorage('disk', {
-          path: '/',
-          thresholdPercent: 0.5,
-        }),
+      (): Promise<any> => this.db.pingCheck('database'),
     ]);
   }
 
   /**
-   * Liveness probe (Kubernetes)
+   * Liveness probe
+   * @returns Simple OK status
    */
-  @Get('liveness')
-  @Public()
-  @HealthCheck()
-  @ApiOperation({ summary: 'Kubernetes liveness probe' })
-  liveness() {
-    return this.health.check([]);
+  @Get('live')
+  @ApiOperation({ summary: 'Liveness probe' })
+  @ApiResponse({
+    status: 200,
+    description: 'Application is alive',
+  })
+  liveness(): { status: string } {
+    return { status: 'ok' };
   }
 
   /**
-   * Readiness probe (Kubernetes)
+   * Readiness probe
+   * @returns Health status of dependencies
    */
-  @Get('readiness')
-  @Public()
+  @Get('ready')
   @HealthCheck()
-  @ApiOperation({ summary: 'Kubernetes readiness probe' })
-  readiness() {
-    return this.health.check([() => this.db.pingCheck('database')]);
+  @ApiOperation({ summary: 'Readiness probe' })
+  @ApiResponse({
+    status: 200,
+    description: 'Application is ready',
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'Application is not ready',
+  })
+  readiness(): Promise<HealthCheckResult> {
+    return this.health.check([
+      (): Promise<any> => this.db.pingCheck('database'),
+    ]);
   }
 }
