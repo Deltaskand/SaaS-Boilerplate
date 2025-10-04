@@ -78,7 +78,8 @@ class JwtAuthGuardWithPublic extends JwtAuthGuard {
         migrations: [__dirname + '/migrations/**/*{.ts,.js}'],
         synchronize: configService.get('database.synchronize'),
         logging: configService.get('database.logging'),
-        ssl: configService.get('app.nodeEnv') === 'production' ? { rejectUnauthorized: false } : false,
+        ssl:
+          configService.get('app.nodeEnv') === 'production' ? { rejectUnauthorized: false } : false,
       }),
     }),
 

@@ -6,7 +6,9 @@ import * as Joi from 'joi';
  */
 export const configValidationSchema = Joi.object({
   // Application
-  NODE_ENV: Joi.string().valid('development', 'production', 'test', 'staging').default('development'),
+  NODE_ENV: Joi.string()
+    .valid('development', 'production', 'test', 'staging')
+    .default('development'),
   PORT: Joi.number().default(3000),
   APP_NAME: Joi.string().default('SaaS Boilerplate'),
   APP_URL: Joi.string().uri().required(),
