@@ -41,3 +41,9 @@ coverage/
 # Temporary
 .tmp/
 temp/
+
+# Temporary fix scripts (should not be committed)
+fix-*.sh
+clean-*.sh
+reinstall-*.sh
+install-*.sh

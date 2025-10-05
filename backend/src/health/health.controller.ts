@@ -5,6 +5,7 @@ import {
   HealthCheck,
   MongooseHealthIndicator,
   HealthCheckResult,
+  HealthIndicatorResult,
 } from '@nestjs/terminus';
 
 /**
@@ -35,9 +36,7 @@ export class HealthController {
     description: 'The Health Check is not successful',
   })
   check(): Promise<HealthCheckResult> {
-    return this.health.check([
-      (): Promise<any> => this.db.pingCheck('database'),
-    ]);
+    return this.health.check([(): Promise<HealthIndicatorResult> => this.db.pingCheck('database')]);
   }
 
   /**
@@ -70,8 +69,6 @@ export class HealthController {
     description: 'Application is not ready',
   })
   readiness(): Promise<HealthCheckResult> {
-    return this.health.check([
-      (): Promise<any> => this.db.pingCheck('database'),
-    ]);
+    return this.health.check([(): Promise<HealthIndicatorResult> => this.db.pingCheck('database')]);
   }
 }
