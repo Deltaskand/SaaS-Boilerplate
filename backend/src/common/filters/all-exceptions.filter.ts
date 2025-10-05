@@ -8,6 +8,15 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
+/**
+ * HTTP Exception Response Interface
+ */
+interface HttpExceptionResponse {
+  message: string | string[];
+  error?: string;
+  statusCode?: number;
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -23,12 +32,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const message =
       exception instanceof HttpException ? exception.getResponse() : 'Internal server error';
 
+    // Extract message from exception response
+    const getErrorMessage = (msg: string | object): string => {
+      if (typeof msg === 'string') return msg;
+      if (typeof msg === 'object' && 'message' in msg) {
+        const exceptionMsg = (msg as HttpExceptionResponse).message;
+        return Array.isArray(exceptionMsg) ? exceptionMsg.join(', ') : exceptionMsg;
+      }
+      return 'Internal server error';
+    };
+
     const errorResponse = {
       statusCode: status,
       timestamp: new Date().toISOString(),
       path: request.url,
       method: request.method,
-      message: typeof message === 'string' ? message : (message as any).message,
+      message: getErrorMessage(message),
     };
 
     this.logger.error(

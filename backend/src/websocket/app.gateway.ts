@@ -56,7 +56,7 @@ export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
   }
 
   @SubscribeMessage('message')
-  handleMessage(@MessageBody() data: any, @ConnectedSocket() client: Socket): void {
+  handleMessage(@MessageBody() data: unknown, @ConnectedSocket() client: Socket): void {
     this.logger.debug(`Message from ${client.id}:`, data);
     client.emit('message', {
       echo: data,
@@ -64,12 +64,12 @@ export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
     });
   }
 
-  broadcastMessage(event: string, data: any): void {
+  broadcastMessage(event: string, data: unknown): void {
     this.server.emit(event, data);
     this.logger.debug(`Broadcast: ${event}`, data);
   }
 
-  sendToClient(clientId: string, event: string, data: any): void {
+  sendToClient(clientId: string, event: string, data: unknown): void {
     this.server.to(clientId).emit(event, data);
     this.logger.debug(`Message to ${clientId}: ${event}`, data);
   }

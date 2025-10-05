@@ -9,6 +9,15 @@ import {
 import { Request, Response } from 'express';
 
 /**
+ * HTTP Exception Response Interface
+ */
+interface HttpExceptionResponse {
+  message: string | string[];
+  error?: string;
+  statusCode?: number;
+}
+
+/**
  * Global HTTP Exception Filter
  * Catches all HTTP exceptions and formats them consistently
  * Includes logging and correlation ID tracking
@@ -27,6 +36,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // Extract correlation ID from request (added by correlation middleware)
     const correlationId = request.headers['x-correlation-id'] as string;
 
+    // Extract message from exception response
+    const getMessage = (res: string | object): string | string[] => {
+      if (typeof res === 'string') return res;
+      if (typeof res === 'object' && 'message' in res) {
+        return (res as HttpExceptionResponse).message;
+      }
+      return 'Internal server error';
+    };
+
     // Format error response
     const errorResponse = {
       statusCode: status,
@@ -34,13 +52,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       path: request.url,
       method: request.method,
       correlationId,
-      message:
-        typeof exceptionResponse === 'string'
-          ? exceptionResponse
-          : (exceptionResponse as any).message || 'Internal server error',
+      message: getMessage(exceptionResponse),
       ...(typeof exceptionResponse === 'object' &&
         'error' in exceptionResponse && {
-          error: (exceptionResponse as any).error,
+          error: (exceptionResponse as HttpExceptionResponse).error,
         }),
     };
 
