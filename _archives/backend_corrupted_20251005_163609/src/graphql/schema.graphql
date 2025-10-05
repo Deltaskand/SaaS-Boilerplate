@@ -1,0 +1,13 @@
+type Query {
+  """Health check query - returns application status"""
+  health: HealthStatus!
+}
+
+type HealthStatus {
+  """Overall application status"""
+  status: String!
+  """Application version"""
+  version: String!
+  """Current timestamp"""
+  timestamp: String!
+}

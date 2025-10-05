@@ -1,0 +1,390 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================================
+// USER & AUTHENTICATION MODELS
+// ================================================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  emailVerified     Boolean   @default(false)
+  emailVerifiedAt   DateTime?
+  password          String?
+  firstName         String?
+  lastName          String?
+  avatar            String?
+  phone             String?
+  phoneVerified     Boolean   @default(false)
+  
+  // GDPR & Compliance
+  consentGiven      Boolean   @default(false)
+  consentGivenAt    DateTime?
+  dataRetentionDate DateTime?
+  
+  // Account status
+  isActive          Boolean   @default(true)
+  isBlocked         Boolean   @default(false)
+  blockedReason     String?
+  blockedAt         DateTime?
+  
+  // Roles & permissions
+  role              UserRole  @default(USER)
+  permissions       Json?
+  
+  // Metadata
+  locale            String    @default("en")
+  timezone          String    @default("UTC")
+  lastLoginAt       DateTime?
+  lastActivityAt    DateTime?
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+  
+  // Relations
+  refreshTokens     RefreshToken[]
+  socialAccounts    SocialAccount[]
+  subscription      Subscription?
+  auditLogs         AuditLog[]
+  sessions          Session[]
+  mfaSettings       MfaSettings?
+  
+  @@index([email])
+  @@index([createdAt])
+  @@index([role])
+  @@map("users")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  token       String   @unique
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  isRevoked   Boolean  @default(false)
+  revokedAt   DateTime?
+  deviceInfo  Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model SocialAccount {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     SocialProvider
+  providerId   String
+  accessToken  String?
+  refreshToken String?
+  profile      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@unique([provider, providerId])
+  @@index([userId])
+  @@map("social_accounts")
+}
+
+enum SocialProvider {
+  GOOGLE
+  GITHUB
+  APPLE
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionToken String   @unique
+  deviceInfo   Json?
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  
+  @@index([userId])
+  @@index([sessionToken])
+  @@map("sessions")
+}
+
+model MfaSettings {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isEnabled   Boolean  @default(false)
+  method      MfaMethod @default(TOTP)
+  secret      String?
+  backupCodes String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("mfa_settings")
+}
+
+enum MfaMethod {
+  TOTP
+  SMS
+  EMAIL
+}
+
+// ================================================
+// BILLING & SUBSCRIPTION MODELS
+// ================================================
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  plan               SubscriptionPlan   @default(FREE)
+  status             SubscriptionStatus @default(ACTIVE)
+  
+  // Stripe integration
+  stripeCustomerId   String?            @unique
+  stripeSubscriptionId String?          @unique
+  stripePriceId      String?
+  
+  // Billing cycle
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAt           DateTime?
+  canceledAt         DateTime?
+  
+  // Usage & Quotas
+  creditsUsed        Int                @default(0)
+  creditsLimit       Int?
+  
+  // Metadata
+  metadata           Json?
+  
+  // Timestamps
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  
+  // Relations
+  invoices           Invoice[]
+  
+  @@index([userId])
+  @@index([stripeCustomerId])
+  @@map("subscriptions")
+}
+
+enum SubscriptionPlan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+model Invoice {
+  id                String   @id @default(uuid())
+  subscriptionId    String
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  
+  stripeInvoiceId   String?  @unique
+  amount            Int
+  currency          String   @default("usd")
+  status            InvoiceStatus @default(PENDING)
+  
+  paidAt            DateTime?
+  dueDate           DateTime?
+  
+  invoiceUrl        String?
+  pdfUrl            String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([subscriptionId])
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+// ================================================
+// AUDIT & COMPLIANCE MODELS
+// ================================================
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action      String
+  resource    String
+  resourceId  String?
+  
+  // Request metadata
+  ipAddress   String?
+  userAgent   String?
+  correlationId String?
+  
+  // Data
+  oldData     Json?
+  newData     Json?
+  metadata    Json?
+  
+  // Security
+  severity    LogSeverity @default(INFO)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([correlationId])
+  @@map("audit_logs")
+}
+
+enum LogSeverity {
+  DEBUG
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+// ================================================
+// API & WEBHOOKS MODELS
+// ================================================
+
+model ApiKey {
+  id          String   @id @default(uuid())
+  name        String
+  key         String   @unique
+  userId      String?
+  
+  // Permissions
+  scopes      String[]
+  rateLimit   Int      @default(1000)
+  
+  // Status
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([key])
+  @@map("api_keys")
+}
+
+model Webhook {
+  id          String        @id @default(uuid())
+  url         String
+  events      String[]
+  secret      String
+  isActive    Boolean       @default(true)
+  
+  // Retry configuration
+  maxRetries  Int           @default(3)
+  retryDelay  Int           @default(60)
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // Relations
+  deliveries  WebhookDelivery[]
+  
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id          String   @id @default(uuid())
+  webhookId   String
+  webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  
+  event       String
+  payload     Json
+  
+  status      WebhookStatus @default(PENDING)
+  statusCode  Int?
+  response    String?
+  
+  attempts    Int      @default(0)
+  nextRetryAt DateTime?
+  
+  createdAt   DateTime @default(now())
+  deliveredAt DateTime?
+  
+  @@index([webhookId])
+  @@index([status])
+  @@map("webhook_deliveries")
+}
+
+enum WebhookStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
+}
+
+// ================================================
+// NOTIFICATION MODELS
+// ================================================
+
+model Notification {
+  id          String             @id @default(uuid())
+  userId      String
+  
+  type        NotificationType
+  title       String
+  message     String
+  
+  isRead      Boolean            @default(false)
+  readAt      DateTime?
+  
+  metadata    Json?
+  
+  createdAt   DateTime           @default(now())
+  
+  @@index([userId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  BILLING
+  SECURITY
+}
