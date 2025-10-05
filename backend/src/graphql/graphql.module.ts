@@ -4,6 +4,7 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { ConfigService } from '../config/config.service';
 import { Request, Response } from 'express';
 import { BaseResolver } from './base.resolver';
+import { GraphQLFormattedError } from 'graphql';
 
 @Module({
   imports: [
@@ -16,10 +17,13 @@ import { BaseResolver } from './base.resolver';
         playground: configService.graphqlPlayground,
         introspection: configService.graphqlIntrospection,
         context: ({ req, res }: { req: Request; res: Response }) => ({ req, res }),
-        formatError: (error: any) => ({
-          message: error.message,
-          code: error.extensions?.code || 'INTERNAL_SERVER_ERROR',
-          path: error.path,
+        formatError: (formattedError: GraphQLFormattedError): GraphQLFormattedError => ({
+          message: formattedError.message,
+          extensions: {
+            ...formattedError.extensions,
+            code: formattedError.extensions?.code || 'INTERNAL_SERVER_ERROR',
+          },
+          path: formattedError.path,
         }),
         cors: {
           origin: configService.corsOrigin,

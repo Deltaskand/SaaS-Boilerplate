@@ -8,6 +8,12 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
+interface HttpExceptionResponse {
+  message: string | string[];
+  error?: string;
+  statusCode?: number;
+}
+
 /**
  * Global HTTP Exception Filter
  * Catches all HTTP exceptions and formats them consistently
@@ -37,10 +43,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message:
         typeof exceptionResponse === 'string'
           ? exceptionResponse
-          : (exceptionResponse as any).message || 'Internal server error',
+          : (exceptionResponse as HttpExceptionResponse).message || 'Internal server error',
       ...(typeof exceptionResponse === 'object' &&
         'error' in exceptionResponse && {
-          error: (exceptionResponse as any).error,
+          error: (exceptionResponse as HttpExceptionResponse).error,
         }),
     };
 
