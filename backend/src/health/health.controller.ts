@@ -8,8 +8,8 @@ import {
 } from '@nestjs/terminus';
 
 /**
- * Health Check Controller
- * Provides endpoints to check application and database health
+ * Health Controller
+ * Provides health check endpoints for monitoring
  */
 @ApiTags('Health')
 @Controller('health')
@@ -21,62 +21,57 @@ export class HealthController {
 
   /**
    * Main health check endpoint
-   * Returns overall application health status including MongoDB
+   * Checks database connectivity
    */
   @Get()
   @HealthCheck()
   @ApiOperation({ summary: 'Health check endpoint' })
   @ApiResponse({
     status: 200,
-    description: 'Application is healthy',
-    schema: {
-      type: 'object',
-      properties: {
-        status: { type: 'string', example: 'ok' },
-        info: {
-          type: 'object',
-          properties: {
-            database: {
-              type: 'object',
-              properties: {
-                status: { type: 'string', example: 'up' },
-              },
-            },
-          },
-        },
-        details: { type: 'object' },
-      },
-    },
+    description: 'The Health Check is successful',
   })
-  @ApiResponse({ status: 503, description: 'Application is unhealthy' })
+  @ApiResponse({
+    status: 503,
+    description: 'The Health Check is not successful',
+  })
   check(): Promise<HealthCheckResult> {
     return this.health.check([
-      // MongoDB health check
-      () => this.db.pingCheck('database'),
+      (): Promise<any> => this.db.pingCheck('database'),
     ]);
   }
 
   /**
-   * Simple liveness probe
-   * Returns 200 if application is running
+   * Liveness probe for Kubernetes
+   * Returns OK if application is running
    */
   @Get('live')
   @ApiOperation({ summary: 'Liveness probe' })
-  @ApiResponse({ status: 200, description: 'Application is alive' })
+  @ApiResponse({
+    status: 200,
+    description: 'Application is alive',
+  })
   liveness(): { status: string } {
     return { status: 'ok' };
   }
 
   /**
-   * Readiness probe
-   * Returns 200 if application is ready to serve requests
+   * Readiness probe for Kubernetes
+   * Checks if application is ready to accept traffic
    */
   @Get('ready')
-  @ApiOperation({ summary: 'Readiness probe' })
-  @ApiResponse({ status: 200, description: 'Application is ready' })
-  @ApiResponse({ status: 503, description: 'Application is not ready' })
   @HealthCheck()
+  @ApiOperation({ summary: 'Readiness probe' })
+  @ApiResponse({
+    status: 200,
+    description: 'Application is ready',
+  })
+  @ApiResponse({
+    status: 503,
+    description: 'Application is not ready',
+  })
   readiness(): Promise<HealthCheckResult> {
-    return this.health.check([() => this.db.pingCheck('database')]);
+    return this.health.check([
+      (): Promise<any> => this.db.pingCheck('database'),
+    ]);
   }
 }
