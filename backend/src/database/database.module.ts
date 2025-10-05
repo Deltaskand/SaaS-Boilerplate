@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigService } from '../config/config.service';
 
@@ -10,23 +10,26 @@ import { ConfigService } from '../config/config.service';
   imports: [
     MongooseModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.mongodbUri,
-        retryAttempts: 3,
-        retryDelay: 1000,
-        connectionFactory: (connection) => {
-          connection.on('connected', () => {
-            console.log('MongoDB connected successfully');
-          });
-          connection.on('disconnected', () => {
-            console.warn('MongoDB disconnected');
-          });
-          connection.on('error', (error: Error) => {
-            console.error('MongoDB connection error:', error);
-          });
-          return connection;
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const logger = new Logger('DatabaseModule');
+        return {
+          uri: configService.mongodbUri,
+          retryAttempts: 3,
+          retryDelay: 1000,
+          connectionFactory: (connection) => {
+            connection.on('connected', () => {
+              logger.log('MongoDB connected successfully');
+            });
+            connection.on('disconnected', () => {
+              logger.warn('MongoDB disconnected');
+            });
+            connection.on('error', (error: Error) => {
+              logger.error('MongoDB connection error:', error.stack);
+            });
+            return connection;
+          },
+        };
+      },
     }),
   ],
 })

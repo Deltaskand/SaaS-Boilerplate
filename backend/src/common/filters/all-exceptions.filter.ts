@@ -8,6 +8,12 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
+interface HttpExceptionResponse {
+  message: string | string[];
+  error?: string;
+  statusCode?: number;
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -28,7 +34,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
       method: request.method,
-      message: typeof message === 'string' ? message : (message as any).message,
+      message: typeof message === 'string' ? message : (message as HttpExceptionResponse).message,
     };
 
     this.logger.error(
