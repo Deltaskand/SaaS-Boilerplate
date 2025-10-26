@@ -1,0 +1,358 @@
+version: '3.9'
+
+# ================================================
+# Docker Compose - Pré-Production OVH
+# ================================================
+# Architecture: PostgreSQL + Redis + Backend + Nginx
+# SSL: Let's Encrypt automatique via Nginx Proxy
+# ================================================
+
+services:
+  # ================================================
+  # PostgreSQL Database - Production Grade
+  # ================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: saas-postgres-preprod
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-saas_boilerplate_preprod}
+      POSTGRES_USER: ${POSTGRES_USER:-saas_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+
+    ports:
+      - "127.0.0.1:5432:5432"  # Accessible only from localhost
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saas_user} -d ${POSTGRES_DB:-saas_boilerplate_preprod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      - saas-network
+
+    # Security: Run as non-root
+    user: postgres
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ================================================
+  # Redis - Cache & Queue
+  # ================================================
+  redis:
+    image: redis:7-alpine
+    container_name: saas-redis-preprod
+    restart: unless-stopped
+
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+
+    volumes:
+      - redis_data:/data
+
+    ports:
+      - "127.0.0.1:6379:6379"  # Accessible only from localhost
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - saas-network
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # ================================================
+  # Backend API - NestJS
+  # ================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      cache_from:
+        - ${DOCKER_REGISTRY:-ghcr.io}/${DOCKER_IMAGE:-saas-boilerplate}:latest
+
+    container_name: saas-backend-preprod
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      APP_NAME: ${APP_NAME:-SaaS Boilerplate PreProd}
+      APP_URL: ${APP_URL:-https://preprod-api.votredomaine.com}
+
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-saas_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saas_boilerplate_preprod}?schema=public&sslmode=prefer
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+      # Security
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:-15m}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+
+      # CORS
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://preprod.votredomaine.com}
+      WEBSOCKET_CORS_ORIGIN: ${CORS_ORIGIN:-https://preprod.votredomaine.com}
+
+      # Rate Limiting
+      RATE_LIMIT_TTL: ${RATE_LIMIT_TTL:-900}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+
+      # Monitoring
+      SENTRY_DSN: ${SENTRY_DSN}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # GraphQL
+      GRAPHQL_PLAYGROUND: ${GRAPHQL_PLAYGROUND:-false}
+      GRAPHQL_INTROSPECTION: ${GRAPHQL_INTROSPECTION:-false}
+
+      # External Services
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+
+    ports:
+      - "127.0.0.1:3000:3000"  # Accessible only from localhost (via Nginx)
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health/live', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    networks:
+      - saas-network
+
+    # Logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+  # ================================================
+  # Nginx Reverse Proxy with SSL
+  # ================================================
+  nginx:
+    image: nginx:alpine
+    container_name: saas-nginx-preprod
+    restart: unless-stopped
+
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./infra/nginx/ssl:/etc/nginx/ssl:ro
+      - certbot_data:/var/www/certbot:ro
+      - certbot_conf:/etc/letsencrypt:ro
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    depends_on:
+      - backend
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    networks:
+      - saas-network
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ================================================
+  # Certbot - SSL Certificates (Let's Encrypt)
+  # ================================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: saas-certbot-preprod
+
+    volumes:
+      - certbot_data:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+    networks:
+      - saas-network
+
+  # ================================================
+  # Prometheus - Metrics Collection
+  # ================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: saas-prometheus-preprod
+    restart: unless-stopped
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    ports:
+      - "127.0.0.1:9090:9090"
+
+    networks:
+      - saas-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ================================================
+  # Grafana - Metrics Visualization
+  # ================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: saas-grafana-preprod
+    restart: unless-stopped
+
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://grafana.preprod.votredomaine.com}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+
+    ports:
+      - "127.0.0.1:3001:3000"
+
+    depends_on:
+      - prometheus
+
+    networks:
+      - saas-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ================================================
+  # PostgreSQL Backup Service
+  # ================================================
+  postgres-backup:
+    image: prodrigestivill/postgres-backup-local:15-alpine
+    container_name: saas-postgres-backup-preprod
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-saas_boilerplate_preprod}
+      POSTGRES_USER: ${POSTGRES_USER:-saas_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+      HEALTHCHECK_PORT: 8080
+
+    volumes:
+      - ./backups:/backups
+
+    depends_on:
+      - postgres
+
+    networks:
+      - saas-network
+
+# ================================================
+# Volumes
+# ================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  certbot_data:
+    driver: local
+  certbot_conf:
+    driver: local
+
+# ================================================
+# Networks
+# ================================================
+networks:
+  saas-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
