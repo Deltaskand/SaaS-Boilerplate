@@ -3,9 +3,11 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import {
   HealthCheckService,
   HealthCheck,
-  MongooseHealthIndicator,
   HealthCheckResult,
+  MemoryHealthIndicator,
+  DiskHealthIndicator,
 } from '@nestjs/terminus';
+import { PrismaHealthIndicator } from './prisma.health';
 
 /**
  * Health Check Controller
@@ -16,12 +18,14 @@ import {
 export class HealthController {
   constructor(
     private health: HealthCheckService,
-    private db: MongooseHealthIndicator,
+    private db: PrismaHealthIndicator,
+    private memory: MemoryHealthIndicator,
+    private disk: DiskHealthIndicator,
   ) {}
 
   /**
    * Main health check endpoint
-   * Returns overall application health status including MongoDB
+   * Returns overall application health status including PostgreSQL
    */
   @Get()
   @HealthCheck()
@@ -51,8 +55,12 @@ export class HealthController {
   @ApiResponse({ status: 503, description: 'Application is unhealthy' })
   check(): Promise<HealthCheckResult> {
     return this.health.check([
-      // MongoDB health check
-      () => this.db.pingCheck('database'),
+      // PostgreSQL health check
+      () => this.db.isHealthy('database'),
+      // Memory health check (heap should not exceed 300MB)
+      () => this.memory.checkHeap('memory_heap', 300 * 1024 * 1024),
+      // Disk health check (storage should not exceed 90%)
+      () => this.disk.checkStorage('disk', { path: '/', thresholdPercent: 0.9 }),
     ]);
   }
 
@@ -77,6 +85,6 @@ export class HealthController {
   @ApiResponse({ status: 503, description: 'Application is not ready' })
   @HealthCheck()
   readiness(): Promise<HealthCheckResult> {
-    return this.health.check([() => this.db.pingCheck('database')]);
+    return this.health.check([() => this.db.isHealthy('database')]);
   }
 }

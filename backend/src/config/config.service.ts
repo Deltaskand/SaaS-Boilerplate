@@ -39,8 +39,20 @@ export class ConfigService {
   }
 
   // Database
-  get mongodbUri(): string {
-    return this.configService.get<string>('MONGODB_URI')!;
+  get databaseUrl(): string {
+    return this.configService.get<string>('DATABASE_URL')!;
+  }
+
+  get redisHost(): string {
+    return this.configService.get<string>('REDIS_HOST', 'localhost');
+  }
+
+  get redisPort(): number {
+    return this.configService.get<number>('REDIS_PORT', 6379);
+  }
+
+  get redisPassword(): string | undefined {
+    return this.configService.get<string>('REDIS_PASSWORD');
   }
 
   // Logging

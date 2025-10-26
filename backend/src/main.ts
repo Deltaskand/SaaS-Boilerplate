@@ -5,7 +5,10 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
+import { PrismaService } from './database/prisma.service';
 import { createPinoLogger } from './common/logger.config';
+import { initializeSentry } from './monitoring/sentry.config';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -15,6 +18,16 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const logger = createPinoLogger(configService);
   app.useLogger(new Logger());
+
+  // Initialize Sentry APM
+  initializeSentry(configService);
+
+  // Enable Prisma shutdown hooks
+  const prismaService = app.get(PrismaService);
+  await prismaService.enableShutdownHooks(app);
+
+  // Global exception filter
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   app.use(
     helmet({
@@ -53,7 +66,7 @@ async function bootstrap() {
   );
 
   app.setGlobalPrefix('api', {
-    exclude: ['health', 'health/live', 'health/ready'],
+    exclude: ['health', 'health/live', 'health/ready', 'metrics'],
   });
 
   if (!configService.isProduction) {
