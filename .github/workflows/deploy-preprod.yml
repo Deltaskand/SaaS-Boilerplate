@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - 'claude/**'  # Trigger on Claude branches for testing
   workflow_dispatch:
     inputs:
       action:
