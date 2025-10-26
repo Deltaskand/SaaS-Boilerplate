@@ -11,16 +11,25 @@ export const envValidationSchema = Joi.object({
     .default('development'),
   PORT: Joi.number().default(3000),
   APP_NAME: Joi.string().default('SaaS Boilerplate'),
-  APP_URL: Joi.string().uri().required(),
+  APP_URL: Joi.string().uri().default('http://localhost:3000'),
 
   // Database
-  MONGODB_URI: Joi.string().required(),
+  DATABASE_URL: Joi.string()
+    .uri({ scheme: ['postgres', 'postgresql'] })
+    .required(),
 
   // Logging
   LOG_LEVEL: Joi.string().valid('fatal', 'error', 'warn', 'info', 'debug', 'trace').default('info'),
 
+  // Redis
+  REDIS_HOST: Joi.alternatives()
+    .try(Joi.string().hostname(), Joi.string().ip({ version: ['ipv4', 'ipv6'] }))
+    .default('localhost'),
+  REDIS_PORT: Joi.number().port().default(6379),
+  REDIS_PASSWORD: Joi.string().allow('').optional(),
+
   // CORS
-  CORS_ORIGIN: Joi.string().required(),
+  CORS_ORIGIN: Joi.string().default('http://localhost:3000'),
 
   // Security
   JWT_SECRET: Joi.string().min(32).required(),
@@ -37,10 +46,13 @@ export const envValidationSchema = Joi.object({
 
   // WebSockets
   WEBSOCKET_PORT: Joi.number().default(3000),
-  WEBSOCKET_CORS_ORIGIN: Joi.string().required(),
+  WEBSOCKET_CORS_ORIGIN: Joi.string().default(Joi.ref('CORS_ORIGIN')),
 
   // Multi-Tenant
   MULTI_TENANT_ENABLED: Joi.boolean().default(false),
+
+  // Observability
+  SENTRY_DSN: Joi.string().uri().allow('').optional(),
 
   // External Services (optional for now, will be required in Scripts 4-5)
   SENDGRID_API_KEY: Joi.string().optional(),

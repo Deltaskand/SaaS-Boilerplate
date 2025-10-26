@@ -13,10 +13,6 @@ import { Server, Socket } from 'socket.io';
 import { ConfigService } from '../config/config.service';
 
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-    credentials: true,
-  },
   namespace: '/ws',
 })
 export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
@@ -27,10 +23,40 @@ export class AppGateway implements OnGatewayInit, OnGatewayConnection, OnGateway
 
   constructor(private readonly configService: ConfigService) {}
 
-  afterInit(_server: Server) {
+  afterInit(server: Server) {
     this.logger.log('WebSocket Gateway initialized');
+
     const corsOrigin = this.configService.websocketCorsOrigin;
-    this.logger.log(`WebSocket CORS origin: ${corsOrigin}`);
+    const allowedOrigins = Array.isArray(corsOrigin)
+      ? corsOrigin.filter(Boolean)
+      : corsOrigin
+      ? [corsOrigin]
+      : [];
+
+    server.engine.opts = server.engine.opts || {};
+    server.engine.opts.cors = server.engine.opts.cors || {};
+    server.engine.opts.cors.origin = corsOrigin;
+    server.engine.opts.cors.credentials = true;
+
+    this.server.opts = this.server.opts || {};
+    this.server.opts.cors = this.server.opts.cors || {};
+    this.server.opts.cors.origin = corsOrigin;
+    this.server.opts.cors.credentials = true;
+
+    if (corsOrigin !== '*' && allowedOrigins.length > 0) {
+      server.use((socket, next) => {
+        const origin = socket.handshake.headers.origin as string | undefined;
+        if (origin && !allowedOrigins.includes(origin)) {
+          this.logger.warn(`Rejected WebSocket connection from origin ${origin}`);
+          return next(new Error('Origin not allowed'));
+        }
+        return next();
+      });
+    }
+
+    this.logger.log(
+      `WebSocket CORS origin: ${Array.isArray(corsOrigin) ? allowedOrigins.join(', ') : corsOrigin}`,
+    );
   }
 
   handleConnection(client: Socket) {

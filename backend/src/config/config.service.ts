@@ -15,7 +15,8 @@ export class ConfigService {
   }
 
   get port(): number {
-    return this.configService.get<number>('PORT', 3000);
+    const port = this.configService.get<string>('PORT');
+    return port ? parseInt(port, 10) : 3000;
   }
 
   get appName(): string {
@@ -23,7 +24,7 @@ export class ConfigService {
   }
 
   get appUrl(): string {
-    return this.configService.get<string>('APP_URL')!;
+    return this.configService.get<string>('APP_URL', 'http://localhost:3000');
   }
 
   get isDevelopment(): boolean {
@@ -48,7 +49,8 @@ export class ConfigService {
   }
 
   get redisPort(): number {
-    return this.configService.get<number>('REDIS_PORT', 6379);
+    const port = this.configService.get<string>('REDIS_PORT');
+    return port ? parseInt(port, 10) : 6379;
   }
 
   get redisPassword(): string | undefined {
@@ -62,9 +64,8 @@ export class ConfigService {
 
   // CORS
   get corsOrigin(): string | string[] {
-    const origin = this.configService.get<string>('CORS_ORIGIN')!;
-    // Support multiple origins separated by comma
-    return origin.includes(',') ? origin.split(',').map((o) => o.trim()) : origin;
+    const origin = this.configService.get<string>('CORS_ORIGIN', 'http://localhost:3000');
+    return this.parseOrigins(origin, 'CORS_ORIGIN');
   }
 
   // Security - JWT
@@ -104,8 +105,9 @@ export class ConfigService {
   }
 
   get websocketCorsOrigin(): string | string[] {
-    const origin = this.configService.get<string>('WEBSOCKET_CORS_ORIGIN')!;
-    return origin.includes(',') ? origin.split(',').map((o) => o.trim()) : origin;
+    const origin = this.configService.get<string>('WEBSOCKET_CORS_ORIGIN');
+    const fallback = this.configService.get<string>('CORS_ORIGIN', 'http://localhost:3000');
+    return this.parseOrigins(origin ?? fallback, 'WEBSOCKET_CORS_ORIGIN');
   }
 
   // Multi-Tenant
@@ -176,5 +178,35 @@ export class ConfigService {
 
   get githubCallbackUrl(): string | undefined {
     return this.configService.get<string>('GITHUB_CALLBACK_URL');
+  }
+
+  get sentryDsn(): string | undefined {
+    const dsn = this.configService.get<string>('SENTRY_DSN');
+    if (!dsn || dsn.trim().length === 0) {
+      return undefined;
+    }
+    return dsn;
+  }
+
+  private parseOrigins(value: string, context: string): string | string[] {
+    const trimmed = value.trim();
+
+    if (trimmed === '*') {
+      if (this.isProduction) {
+        throw new Error(`${context} cannot be "*" in production`);
+      }
+      return trimmed;
+    }
+
+    const origins = trimmed
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean);
+
+    if (origins.length === 0) {
+      return [];
+    }
+
+    return origins.length === 1 ? origins[0] : origins;
   }
 }

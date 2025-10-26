@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Header } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { MetricsService } from './metrics.service';
 
@@ -16,6 +16,8 @@ export class MetricsController {
    * Returns metrics in Prometheus exposition format
    */
   @Get()
+  @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+  @Header('Cache-Control', 'no-store')
   @ApiExcludeEndpoint() // Hide from Swagger docs
   @ApiOperation({ summary: 'Prometheus metrics endpoint' })
   @ApiResponse({
@@ -27,7 +29,7 @@ export class MetricsController {
       }
     }
   })
-  getMetrics(): string {
+  async getMetrics(): Promise<string> {
     return this.metricsService.getMetrics();
   }
 }

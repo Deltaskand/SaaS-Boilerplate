@@ -20,6 +20,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       errorFormat: 'pretty',
     });
 
+    Object.setPrototypeOf(this, PrismaService.prototype);
+
     // Log queries in development
     if (process.env.NODE_ENV === 'development') {
       this.$on('query' as never, (e: any) => {
