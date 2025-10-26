@@ -6,6 +6,7 @@ import { TerminusModule } from '@nestjs/terminus';
 import { envValidationSchema } from './config/env.validation';
 import { ConfigModule } from './config/config.module';
 import { ConfigService } from './config/config.service';
+import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { HealthController } from './health/health.controller';
@@ -16,6 +17,7 @@ import { QueueModule } from './queues/queue.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { HttpCacheInterceptor } from './cache/cache.interceptor';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { PinoLoggerService } from './common/logger/pino-logger.service';
 
 /**
  * Application Root Module
@@ -33,6 +35,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
         allowUnknown: true,
         abortEarly: false,
       },
+      load: [configuration],
     }),
 
     // Custom ConfigModule that exports ConfigService (@Global)
@@ -76,6 +79,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
     },
+    PinoLoggerService,
     // Global rate limiting guard
     {
       provide: APP_GUARD,

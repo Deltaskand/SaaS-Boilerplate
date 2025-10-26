@@ -1,17 +1,25 @@
 import * as Sentry from '@sentry/node';
+import { INestApplication, LoggerService } from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
 
 /**
  * Sentry APM Configuration
  * Initializes Sentry for error tracking and performance monitoring
  */
-export function initializeSentry(configService: ConfigService) {
-  const sentryDsn = process.env.SENTRY_DSN;
+export function initializeSentry(
+  app: INestApplication,
+  configService: ConfigService,
+  logger: LoggerService,
+) {
+  const sentryDsn = configService.sentryDsn;
 
   if (!sentryDsn) {
-    console.log('⚠️  Sentry DSN not configured - APM disabled');
+    logger.warn('Sentry DSN not configured - APM disabled', 'Sentry');
     return;
   }
+
+  const httpAdapter = app.getHttpAdapter();
+  const server = httpAdapter.getInstance();
 
   Sentry.init({
     dsn: sentryDsn,
@@ -31,7 +39,7 @@ export function initializeSentry(configService: ConfigService) {
 
       // Express integration
       new Sentry.Integrations.Express({
-        app: undefined, // Will be set later
+        app: server,
       }),
     ],
 
@@ -59,7 +67,11 @@ export function initializeSentry(configService: ConfigService) {
     },
   });
 
-  console.log('✅ Sentry APM initialized');
+  server.use(Sentry.Handlers.requestHandler());
+  server.use(Sentry.Handlers.tracingHandler());
+  server.use(Sentry.Handlers.errorHandler());
+
+  logger.log('Sentry APM initialized', 'Sentry');
 }
 
 /**

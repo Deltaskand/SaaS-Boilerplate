@@ -1,33 +1,30 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { PrismaService } from './database/prisma.service';
-import { createPinoLogger } from './common/logger.config';
 import { initializeSentry } from './monitoring/sentry.config';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { PinoLoggerService } from './common/logger/pino-logger.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
   });
 
+  const logger = app.get(PinoLoggerService);
+  app.useLogger(logger);
+
   const configService = app.get(ConfigService);
-  const logger = createPinoLogger(configService);
-  app.useLogger(new Logger());
 
   // Initialize Sentry APM
-  initializeSentry(configService);
+  initializeSentry(app, configService, logger);
 
   // Enable Prisma shutdown hooks
   const prismaService = app.get(PrismaService);
   await prismaService.enableShutdownHooks(app);
-
-  // Global exception filter
-  app.useGlobalFilters(new AllExceptionsFilter());
 
   app.use(
     helmet({
@@ -84,18 +81,19 @@ async function bootstrap() {
       },
     });
 
-    logger.info(
+    logger.log(
       `Swagger documentation available at http://localhost:${configService.port}/api/docs`,
+      'Bootstrap',
     );
   }
 
   const port = configService.port;
   await app.listen(port);
 
-  logger.info(`🚀 Application is running on: http://localhost:${port}`);
-  logger.info(`📊 GraphQL Playground: http://localhost:${port}/graphql`);
-  logger.info(`💓 Health check: http://localhost:${port}/health`);
-  logger.info(`🌍 Environment: ${configService.nodeEnv}`);
+  logger.log(`🚀 Application is running on: http://localhost:${port}`, 'Bootstrap');
+  logger.log(`📊 GraphQL Playground: http://localhost:${port}/graphql`, 'Bootstrap');
+  logger.log(`💓 Health check: http://localhost:${port}/health`, 'Bootstrap');
+  logger.log(`🌍 Environment: ${configService.nodeEnv}`, 'Bootstrap');
 }
 
 bootstrap().catch((error) => {

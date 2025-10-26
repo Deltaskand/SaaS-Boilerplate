@@ -9,7 +9,8 @@ This is **Script 1** of the SaaS Boilerplate project generation. It provides the
 ### ✅ What's Included
 
 - ✅ **NestJS Application Bootstrap** with TypeScript strict mode
-- ✅ **MongoDB Connection** via Mongoose with health monitoring
+- ✅ **PostgreSQL Connection** via Prisma with health monitoring
+- ✅ **Redis Cache & Queues** (Bull) for background processing
 - ✅ **GraphQL API** with Apollo Server (schema-first approach)
 - ✅ **WebSockets** with Socket.io for real-time communication
 - ✅ **Structured Logging** with Pino (JSON format)
@@ -34,7 +35,7 @@ backend/
 │   │   ├── config.module.ts
 │   │   ├── config.service.ts
 │   │   └── env.validation.ts
-│   ├── database/                  # MongoDB connection
+│   ├── database/                  # PostgreSQL connection (Prisma)
 │   │   └── database.module.ts
 │   ├── health/                    # Health check endpoints
 │   │   ├── health.module.ts
@@ -70,7 +71,8 @@ backend/
 ### Prerequisites
 
 - **Node.js** >= 18.x
-- **MongoDB** >= 6.x (running locally or remotely)
+- **PostgreSQL** >= 14.x (running locally or remotely)
+- **Redis** >= 6.x (for cache & queues)
 - **npm** or **yarn**
 
 ### Installation
@@ -86,24 +88,26 @@ backend/
    ```
 
    Edit `.env` and configure at minimum:
-   ```env
-   NODE_ENV=development
-   PORT=3000
-   APP_URL=http://localhost:3000
-   MONGODB_URI=mongodb://localhost:27017/saas-boilerplate
-   CORS_ORIGIN=http://localhost:3001
-   JWT_SECRET=your-super-secret-jwt-key-change-this-in-production-min-32-chars
-   WEBSOCKET_CORS_ORIGIN=http://localhost:3001
-   ```
+  ```env
+  NODE_ENV=development
+  PORT=3000
+  APP_URL=http://localhost:3000
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/saas-boilerplate?schema=public"
+  REDIS_HOST=localhost
+  REDIS_PORT=6379
+  CORS_ORIGIN=http://localhost:3001
+  JWT_SECRET=your-super-secret-jwt-key-change-this-in-production-min-32-chars
+  WEBSOCKET_CORS_ORIGIN=http://localhost:3001
+  ```
 
-3. **Start MongoDB** (if local):
-   ```bash
-   # Using Docker
-   docker run -d -p 27017:27017 --name mongodb mongo:latest
+3. **Start PostgreSQL & Redis** (if local):
+  ```bash
+  # Using Docker Compose
+  docker run -d --name postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=saas-boilerplate -p 5432:5432 postgres:15
+  docker run -d --name redis -p 6379:6379 redis:7-alpine
 
-   # Or using local MongoDB installation
-   mongod --dbpath /path/to/data
-   ```
+  # Or use your preferred managed services
+  ```
 
 4. **Run the application**:
    ```bash
@@ -232,6 +236,15 @@ socket.on('pong', (data) => {
 
 Configure via `LOG_LEVEL` environment variable.
 
+> ℹ️ The NestJS logger is now backed by Pino everywhere (including exception filters and boot logs).
+
+---
+
+## 🛡️ Observability
+
+- **Sentry APM & Error Tracking**: Configure via `SENTRY_DSN`; Express middleware is wired automatically.
+- **Prometheus Metrics**: Exposed at `/metrics` (content-type `text/plain`), powered by `prom-client` default metrics plus custom counters, gauges & histograms.
+
 ---
 
 ## 🛠️ Development Tools
@@ -260,7 +273,7 @@ npm run format
 **Status**: Prepared (disabled by default)
 
 The architecture is ready for multi-tenancy but not activated in Script 1:
-- All MongoDB schemas include optional `tenantId` field
+- Prisma models include optional `tenantId` field
 - Middleware extracts tenant context (currently inactive)
 - Will be enabled in **Phase 3**
 
@@ -321,7 +334,7 @@ Before moving to Script 2, verify:
 - [x] ConfigService type-safe
 
 ### Database
-- [x] MongoDB connexion établie
+- [x] PostgreSQL connexion établie
 - [x] Health check DB fonctionnel
 
 ### APIs

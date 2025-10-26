@@ -21,63 +21,69 @@ describe('MetricsService', () => {
   });
 
   describe('incrementCounter', () => {
-    it('should increment counter metric', () => {
+    it('should increment counter metric', async () => {
       service.incrementCounter('http_requests_total', 1);
-      const metrics = service.getMetrics();
+      const metrics = await service.getMetrics();
       expect(metrics).toContain('http_requests_total 1');
     });
 
-    it('should increment counter multiple times', () => {
+    it('should increment counter multiple times', async () => {
       service.incrementCounter('http_requests_total', 1);
       service.incrementCounter('http_requests_total', 2);
-      const metrics = service.getMetrics();
+      const metrics = await service.getMetrics();
       expect(metrics).toContain('http_requests_total 3');
     });
 
-    it('should support labels', () => {
+    it('should support labels', async () => {
       service.incrementCounter('http_requests_total', 1, { method: 'GET', status: '200' });
-      const metrics = service.getMetrics();
+      const metrics = await service.getMetrics();
       expect(metrics).toContain('http_requests_total{method="GET",status="200"} 1');
     });
   });
 
   describe('setGauge', () => {
-    it('should set gauge metric', () => {
+    it('should set gauge metric', async () => {
       service.setGauge('active_connections', 42);
-      const metrics = service.getMetrics();
+      const metrics = await service.getMetrics();
       expect(metrics).toContain('active_connections 42');
     });
 
-    it('should overwrite gauge value', () => {
+    it('should overwrite gauge value', async () => {
       service.setGauge('active_connections', 42);
       service.setGauge('active_connections', 100);
-      const metrics = service.getMetrics();
+      const metrics = await service.getMetrics();
       expect(metrics).toContain('active_connections 100');
     });
   });
 
+  describe('recordHistogram', () => {
+    it('should record histogram values', async () => {
+      service.recordHistogram('http_request_duration_seconds', 0.5, { method: 'GET' });
+      const metrics = await service.getMetrics();
+      expect(metrics).toContain('http_request_duration_seconds_bucket{method="GET",le="0.5"} 1');
+    });
+  });
+
   describe('getMetrics', () => {
-    it('should return metrics in Prometheus format', () => {
+    it('should return metrics in Prometheus format', async () => {
       service.incrementCounter('test_counter', 5);
-      const metrics = service.getMetrics();
+      const metrics = await service.getMetrics();
+      expect(metrics).toContain('# TYPE test_counter counter');
       expect(metrics).toContain('test_counter 5');
     });
 
-    it('should include Node.js default metrics', () => {
-      const metrics = service.getMetrics();
-      expect(metrics).toContain('nodejs_heap_used_bytes');
-      expect(metrics).toContain('nodejs_heap_total_bytes');
-      expect(metrics).toContain('nodejs_rss_bytes');
-      expect(metrics).toContain('nodejs_uptime_seconds');
+    it('should include default process metrics', async () => {
+      const metrics = await service.getMetrics();
+      expect(metrics).toMatch(/process_resident_memory_bytes/);
     });
   });
 
   describe('reset', () => {
-    it('should clear all metrics', () => {
+    it('should clear all metrics', async () => {
       service.incrementCounter('test_counter', 5);
       service.reset();
-      const metrics = service.getMetrics();
-      expect(metrics).not.toContain('test_counter');
+      const metrics = await service.getMetrics();
+      expect(metrics).not.toContain('test_counter 5');
     });
   });
 });
