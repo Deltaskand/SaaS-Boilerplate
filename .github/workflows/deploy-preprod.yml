@@ -1,0 +1,266 @@
+name: Deploy to Pre-Production (OVH)
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Deployment action'
+        required: true
+        default: 'update'
+        type: choice
+        options:
+          - update
+          - rollback
+
+env:
+  NODE_VERSION: '18.x'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ================================================
+  # Build & Test (before deployment)
+  # ================================================
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run linter
+        working-directory: backend
+        run: npm run lint:check
+
+      - name: Run tests
+        working-directory: backend
+        run: npm run test:cov
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          JWT_SECRET: test-secret-minimum-32-characters
+          APP_URL: http://localhost:3000
+          CORS_ORIGIN: http://localhost:3001
+
+      - name: Build application
+        working-directory: backend
+        run: npm run build
+
+  # ================================================
+  # Build & Push Docker Image
+  # ================================================
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=preprod
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
+
+  # ================================================
+  # Deploy to OVH Pre-Production Server
+  # ================================================
+  deploy:
+    name: Deploy to OVH
+    runs-on: ubuntu-latest
+    needs: build-docker
+    environment:
+      name: preprod
+      url: https://preprod-api.votredomaine.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.OVH_SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.OVH_SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Create .env.preprod file
+        run: |
+          cat > .env.preprod << EOF
+          # Application
+          APP_NAME=SaaS Boilerplate PreProd
+          APP_URL=https://${{ secrets.DOMAIN_NAME }}
+          NODE_ENV=production
+
+          # Database
+          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+
+          # Redis
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+
+          # Security
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          JWT_ACCESS_EXPIRATION=15m
+          JWT_REFRESH_EXPIRATION=7d
+
+          # CORS
+          CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
+
+          # Monitoring
+          SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+          LOG_LEVEL=info
+
+          # Docker
+          DOCKER_REGISTRY=${{ env.DOCKER_REGISTRY }}
+          DOCKER_IMAGE=${{ env.IMAGE_NAME }}
+
+          # External Services
+          SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY }}
+          SENDGRID_FROM_EMAIL=${{ secrets.SENDGRID_FROM_EMAIL }}
+          STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+
+          # SSL
+          LETSENCRYPT_EMAIL=${{ secrets.LETSENCRYPT_EMAIL }}
+          DOMAIN_NAME=${{ secrets.DOMAIN_NAME }}
+
+          # Grafana
+          GRAFANA_ADMIN_USER=admin
+          GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+
+          # OVH Server
+          OVH_SERVER_IP=${{ secrets.OVH_SERVER_IP }}
+          OVH_SSH_USER=${{ secrets.OVH_SSH_USER }}
+          OVH_SSH_PORT=22
+          EOF
+
+      - name: Deploy to server
+        run: |
+          # Make deploy script executable
+          chmod +x scripts/deploy-preprod.sh
+
+          # Run deployment
+          if [ "${{ github.event.inputs.action }}" == "rollback" ]; then
+            ./scripts/deploy-preprod.sh --rollback
+          else
+            ./scripts/deploy-preprod.sh --update
+          fi
+
+      - name: Health check
+        run: |
+          # Wait for deployment to stabilize
+          sleep 30
+
+          # Check health endpoint
+          curl -f https://${{ secrets.DOMAIN_NAME }}/health || exit 1
+
+      - name: Notify deployment success
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: "✅ Pre-Production deployment successful!",
+              attachments: [{
+                color: 'good',
+                text: `Commit: ${{ github.sha }}\nBranch: ${{ github.ref }}\nURL: https://${{ secrets.DOMAIN_NAME }}`
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify deployment failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: "❌ Pre-Production deployment failed!",
+              attachments: [{
+                color: 'danger',
+                text: `Commit: ${{ github.sha }}\nBranch: ${{ github.ref }}\nCheck logs for details`
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # ================================================
+  # Run Smoke Tests
+  # ================================================
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+
+    steps:
+      - name: Test health endpoint
+        run: |
+          curl -f https://${{ secrets.DOMAIN_NAME }}/health
+
+      - name: Test API endpoint
+        run: |
+          curl -f https://${{ secrets.DOMAIN_NAME }}/api/docs
+
+      - name: Test metrics endpoint
+        run: |
+          curl -f https://${{ secrets.DOMAIN_NAME }}/metrics
+
+      - name: Smoke tests passed
+        run: echo "✅ All smoke tests passed successfully!"
