@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'saas-boilerplate'
+    environment: 'production'
+
+scrape_configs:
+  - job_name: 'nestjs-app'
+    static_configs:
+      - targets: ['app:3000']
+        labels:
+          service: 'saas-boilerplate-api'
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+        labels:
+          service: 'postgres-db'
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+        labels:
+          service: 'redis-cache'
